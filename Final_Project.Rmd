@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-pacman::p_load(tidyverse, readr, table1, DiagrammeR, rsvg, survival, ggfortify, survminer, ggplot2, lmtest, foreign, naniar)
+pacman::p_load(tidyverse, readr, table1, DiagrammeR, rsvg, survival, ggfortify, survminer, ggplot2, lmtest, foreign, naniar, survRM2, haven, magrittr, mlr)
 
 
 ```
@@ -330,14 +330,80 @@ test.ph
 
 ##Try RMST analysis instead (due to PH assumption violation) 
 ```{r}
-##(this is demo/lab code, adjust as needed)
 
-RMST does not like 0 as a survival time. For those with 0 months survival time, change to 0.5 months
-breast2 <- breast2 %>%
-  mutate(survmo2 = case_when(survmo == 0 ~ 0.5,
-                              survmo > 0 ~ survmo))
-summary(breast2$survmo2)
+#RMST does not like 0 as a survival time. For those with 0 months survival time, change to 0.5 months
+cerv_4 <- cerv_3 %>%
+  mutate(surv_months2 = case_when(surv_months == 0 ~ 0.5,
+                              surv_months > 0 ~ surv_months))
+summary(cerv_4$surv_months2)
 
+
+
+#Compare NH White and NH Black
+cerv_black <- cerv_4 %>%
+  dplyr::filter(race_eth %in% c("Non-Hispanic White", "Non-Hispanic Black"))
+
+#Recode to binary 0 = NH White, 1 = NH Black
+cerv_black$race_bin <- ifelse(cerv_black$race_eth == "Non-Hispanic White", 0, 1)
+
+#Run the RMST
+rmst.black <- rmst2(cerv_black$surv_months2, cerv_black$vstat, cerv_black$race_bin, tau= 60) #5-year survival
+
+print(rmst.black)
+
+plot(rmst.black, xlab="Months", ylab="Survival Probability")
+
+
+
+#Compare NH White and NH Asian or Pacific Islander
+cerv_api <- cerv_4 %>%
+  dplyr::filter(race_eth %in% c("Non-Hispanic White", "Non-Hispanic Asian or Pacific Islander"))
+
+#Recode to binary 0 = NH White, 1 = NH Asian or Pacific Islander
+cerv_api$race_bin <- ifelse(cerv_api$race_eth == "Non-Hispanic White", 0, 1)
+
+#Run the RMST
+rmst.api <- rmst2(cerv_api$surv_months2, cerv_api$vstat, cerv_api$race_bin, tau= 60) #5-year survival
+
+print(rmst.api)
+
+
+
+#Compare NH White and NH American Indian/Alaska Native
+cerv_aian <- cerv_4 %>%
+  dplyr::filter(race_eth %in% c("Non-Hispanic White", "Non-Hispanic American Indian/Alaska Native"))
+
+#Recode to binary 0 = NH White, 1 = NH American Indian/Alaska Native
+cerv_aian$race_bin <- ifelse(cerv_aian$race_eth == "Non-Hispanic White", 0, 1)
+
+#Run the RMST
+rmst.aian <- rmst2(cerv_aian$surv_months2, cerv_aian$vstat, cerv_aian$race_bin, tau= 60) #5-year survival
+
+print(rmst.aian)
+
+
+
+#Compare NH White and Hispanic (All Races)
+cerv_his <- cerv_4 %>%
+  dplyr::filter(race_eth %in% c("Non-Hispanic White", "Hispanic (All Races)"))
+
+#Recode to binary 0 = NH White, 1 = Hispanic (All Races)
+cerv_his$race_bin <- ifelse(cerv_his$race_eth == "Non-Hispanic White", 0, 1)
+
+#Run the RMST
+rmst.his <- rmst2(cerv_his$surv_months2, cerv_his$vstat, cerv_his$race_bin, tau= 60) #5-year survival
+
+print(rmst.his)
 
 ```
+
+# Interpretation 
+
+**Restricted Mean Survival Time (RMST) by arm**
+-  The mean survival time for patients who were NH White was 47.6 months, NH Black was 43.4 months, NH Asian or Pacific Islander was 49.2 months, NH American Indian/Alaska Native was 48.5 months, and Hispanic (All Races) was 49.0 months respectively when following the patients for 60 months (5 years).
+
+**Between-group contrast**
+-  The differences in RMST between NH Black vs. NH White was -4.2 months, NH Asian vs. NH White was 1.6 momths, NH American Indian vs NH White was 0.9 months, and Hispanic vs. NH White was 1.4 months, respectively. 
+-  This indicates that the survival time after diagnosis for NH Black patients was 4.2 months shorter than NH White patients on average, when following the patients for 60 months.
+-  Also indicates that the survival time after diagnosis for NH Asian or Pacific Islander, NH American Indian/Alaska Native, and Hispanic (All Races) patients were 1.6 months, 0.9 months, and 1.4 months longer than NH White patients respectively, when following the patients for 60 months.
 
