@@ -1,0 +1,343 @@
+---
+title: "ADA Final Project"
+author: "Alaina Flory"
+date: "2025-09-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(tidyverse, readr, table1, DiagrammeR, rsvg, survival, ggfortify, survminer, ggplot2, lmtest, foreign, naniar)
+
+
+```
+
+## Import Data
+
+```{r}
+
+cerv <- read.csv("SEER_cerv.csv")
+
+###initial number of cases, women diagnosed with cervical cancer in 2000-2021 = 120,618 cases
+
+```
+
+## Clean Variable Names
+
+```{r}
+#check initial variable names
+colnames(cerv)
+
+#change variable names
+names(cerv) <- c("ID", "cause_spec_death", "site", "COD_recode", "surv_months", "race_eth", "year_dx", "sex", "age", "stage",  "year_followup", "year_death", "days_dx_treat", "rx_rad", "rx_chemo", "rx_no_surgery", "income", "rural_urban") 
+
+#check the changed names
+colnames(cerv)
+
+```
+
+## Clean data types
+```{r}
+
+summary(cerv)
+
+#change variable classes
+cerv <- cerv %>%
+  mutate(cause_spec_death = as.factor(cause_spec_death), 
+         site = as.factor(site),
+         COD_recode = as.factor(COD_recode),
+         race_eth = as.factor(race_eth),
+         sex = as.factor(sex),
+         age = as.numeric(gsub("years", "", age)), ##maybe try using parse_number() function instead?
+         stage = as.factor(stage), 
+         surv_months = as.numeric(surv_months),
+         days_dx_treat = as.numeric(days_dx_treat),
+         rx_rad = as.factor(rx_rad),
+         rx_chemo = as.factor(rx_chemo),
+         rx_no_surgery = as.factor(rx_no_surgery),
+         income = as.factor(income),
+         rural_urban = as.factor(rural_urban))
+
+#check the changes
+summary(cerv)
+
+
+#selecting only women over the age of 18 years
+cerv <- cerv %>%
+  filter(age > 18)
+
+##number of cases = 119,408
+
+
+#selecting only women diagnosed between 2010-2019
+cerv <- cerv %>%
+  filter(year_dx >= 2010, year_dx <= 2019)
+
+###number of cases = 54,415
+
+```
+
+##Cleaning variable levels
+```{r}
+
+##combine cause_spec_death categories into binary vstat variable
+cerv <- cerv %>%
+          mutate(vstat = case_when(
+            cause_spec_death %in% c("Alive or dead of other cause", "Dead (missing/unknown COD)")~ 0,
+            cause_spec_death %in% c("Dead (attributable to this cancer dx)")~ 1))
+
+
+##factor vstat
+#cerv$vstat <- factor(cerv$vstat, levels=c(0:1), labels=c("Alive","Dead"))
+
+
+summary(cerv$vstat)
+
+
+
+##combine income levels
+cerv <- cerv %>%
+  mutate(income_cat = case_when(
+    income %in% c("$75,000 - $79,999", "$80,000 - $84,999", "$85,000 - $89,999", "$90,000 - $94,999", "$95,000 - $99,999", "$100,000 - $109,999", "$110,000 - $119,999", "$120,000+") ~ "> $75,000",
+    income %in% c("< $40,000", "$40,000 - $44,999") ~ "< $45,000",
+    income %in% c("$45,000 - $49,999", "$50,000 - $54,999", "$55,000 - $59,999") ~ "$45,000 - $59,999",
+    income %in% c("$60,000 - $64,999", "$65,000 - $69,999", "$70,000 - $74,999") ~ "$60,000 - $74,999"),
+    income_cat = as.factor(income_cat))
+
+#relevel the income_cat variable and set reference
+cerv$income_cat <- factor(cerv$income_cat, 
+                         levels = c("< $45,000", "$45,000 - $59,999", "$60,000 - $74,999", "> $75,000"))
+
+
+
+#relevel the race variable and set reference
+cerv$race_eth <- factor(cerv$race_eth,
+                    levels = c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic Asian or Pacific Islander", "Non-Hispanic American Indian/Alaska Native", "Hispanic (All Races)", "Non-Hispanic Unknown Race"))
+
+
+
+##set NA's for other variables
+cerv <- replace_with_na(cerv, replace = list(
+                               stage = c("Unknown/unstaged", "Blank(s)"),
+                               race_eth = c("Non-Hispanic Unknown Race"),
+                               rural_urban = c("Unknown/missing/no match (Alaska or Hawaii - Entire State)", "Unknown/missing/no match/Not 1990-2022"),
+                               cause_spec_death = c("N/A not seq 0-59"))) %>%
+  droplevels()
+
+
+##remove ALL NAs from dataset
+cerv_1 <- cerv %>%
+  drop_na()
+
+#number of cases = 44,434
+#check percentage of cases removed = 18.34%
+100 - nrow(cerv_1)/nrow(cerv) * 100
+
+
+##only remove NAs from predictor (race_eth) and outcome (vstat, surv_months) variables
+cerv_2 <- cerv %>%
+  drop_na(race_eth, vstat, surv_months)
+
+#number of cases = 53,712
+#check percentage of cases removed = 1.29%
+100 - nrow(cerv_2)/nrow(cerv) * 100
+
+
+##remove NAs from all variables in use
+cerv_3 <- cerv %>%
+  drop_na(race_eth, vstat, surv_months, age, year_dx, income_cat, rural_urban, stage)
+
+#number of cases = 49,904
+#check percentage of cases removed = 8.29%
+100 - nrow(cerv_3)/nrow(cerv) * 100
+
+```
+
+
+##Table 1 - Descriptive Statistics
+```{r}
+
+#change labels for variables
+label(cerv_3$age) <- "Age"
+label(cerv_3$race_eth) <- "Race and Ethnicity"
+label(cerv_3$income_cat) <- "Income"
+label(cerv_3$stage) <- "Cervical Cancer Stage at Diagnosis"
+label(cerv_3$vstat) <- "Vital Status (due to Cervical Cancer)"
+label(cerv_3$surv_months) <- "Survival Months Following Diagnosis"
+label(cerv_3$days_dx_treat) <- "Days between Diagnosis and Treatment Initiation"
+label(cerv_3$rural_urban) <- "Rural-Urban Residence"
+label(cerv_3$cause_spec_death) <- "Cause of Death"
+label(cerv_3$year_dx) <- "Year of Diagnosis"
+
+##initial table
+table1( ~ age + surv_months + vstat + cause_spec_death + year_dx + rural_urban + income_cat| race_eth, overall = "Total", rowlabelhead = "Variable", footnote = "SD = standard deviation", cerv_3)
+
+```
+
+
+##Kaplan Meier Curves
+```{r}
+# generate survival probabilities at each time point for each group
+cerv.surv <- survfit(Surv(surv_months, vstat) ~ race_eth, cerv_3)
+
+# get KM values (i.e. survival probabilities at each time point for each group)
+summary(cerv.surv) 
+
+##Check the class of the data
+class(cerv.surv)
+
+##Create the Kaplan Meier Curve
+autoplot(cerv.surv) + labs(x="Months", y="Proportion Surviving", title="KM survival plots for Cervical Cancer by Race/Ethnicity") 
+
+##Another version of Kaplan Meier Curve
+ggsurvplot(cerv.surv, data = cerv_3,  conf.int=TRUE, tables.theme = clean_theme())
+
+```
+
+
+##Univariate Cox Proportional Hazards Regression
+```{r}
+
+race <- coxph(Surv(surv_months, vstat) ~ race_eth, cerv_3, ties="efron") 
+summary(race)
+
+```
+Interpretations:
+- Those who were NH Black had a 1.41 (95% CI 1.35 - 1.48) times higher hazard of death from cervical cancer than those who were NH White.
+- Those who were NH Asian or Pacific Islander had a 0.91 (95% CI 0.85-0.97) times hazard of death from cervical cancer than those who were NH White.
+- Those who were Hispanic (all races) had a 0.89 (95% CI 0.86-0.93) times hazard of death from cervical cancer than those who were NH White.
+
+**NH American Indian/Alaska Native has non-significant difference from NH White.
+
+
+##Multivariate Cox Proportional Hazards Regression 
+```{r}
+
+#adjusting for both age and year at diagnosis
+race.adj <- coxph(Surv(surv_months, vstat) ~ race_eth + age + year_dx + income_cat + rural_urban, cerv_3, ties = "efron")
+summary(race.adj)
+
+
+```
+
+Interpretation: 
+- After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Black had a 1.32 (95% CI 1.26 - 1.39) times higher hazard of death from cervical cancer than those who were NH White.
+
+- After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.89 (95% CI 0.84 - 0.95) times hazard of death from cervical cancer than those who were NH White.
+
+- After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were Hispanic(all races) had a 0.96 (95% CI 0.92 - 0.99) times hazard of death from cervical cancer than those who were NH White.
+
+- After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH American Indian/Alaska Native did not have a significant difference (p>0.05) in hazard of death from cervical cancer than those who were NH White.
+
+
+
+#Compare models
+```{r}
+
+lrtest(race, race.adj)
+
+```
+Interpretation:
+- The likelihood ratio test indicates that the model that includes age, year, income, rural_urban variables significantly improves fit compared to the model with just race_eth (p = 2.2 x e-16).
+
+
+##Check for linearity of continuous variables
+```{r}
+
+#create interaction terms for continuous variables
+age_log_interaction <- cerv_3$age * log(cerv_3$age)
+
+year_dx_log_interaction <- cerv_3$year_dx * log(cerv_3$year_dx)
+
+
+#Box Tidwell test for linearity of age variable
+boxTidwell.age <- coxph(Surv(surv_months, vstat) ~ race_eth + age + age_log_interaction + year_dx + income_cat + rural_urban, cerv_3)
+
+summary(boxTidwell.age)
+##p-value for interaction term is <0.05, indicating the linearity assumption is NOT met for age 
+##**NEED TO ASK/FIGURE OUT WHAT TO DO FOR THIS?? IT WAS NOT SIG WHEN I DID 2009-2019 but changed to SIG when I altered time frame to 10 years (2010-2019).
+
+
+#Box Tidwell test for linearity of year_dx variable
+boxTidwell.yeardx <- coxph(Surv(surv_months, vstat) ~ race_eth + age + year_dx + year_dx_log_interaction + income_cat + rural_urban, cerv_3)
+
+summary(boxTidwell.yeardx)
+##p-value for interaction term is <0.05, indicating the linearity assumption is NOT met for year_dx
+#This could be partially due to the limited timeframe of 2010-2019 used in this analysis? Not truly continuous. Change to categorical in analysis.
+
+
+
+
+#visualize distribution of age variable
+ggplot(cerv_3, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Age at Diagnosis",
+       x = "Age at Diagnosis", y = "Number of Cases") +
+  theme_minimal()
+
+#visualize distribution of year_dx variable
+ggplot(cerv_2, aes(x = year_dx)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Year of Diagnosis",
+       x = "Year of Diagnosis", y = "Number of Cases") +
+  theme_minimal()
+
+
+```
+
+
+##Retry Adjusted Cox PH Regression model with year_cat variable (linearity violated for year_dx)
+```{r}
+
+cerv_3$year_cat <- factor(cerv_3$year_dx)
+
+race.adj.mod <- coxph(Surv(surv_months, vstat) ~ race_eth + age + year_cat + income_cat + rural_urban, cerv_3, ties = "efron")
+summary(race.adj.mod)
+
+
+#compare to other adjusted model with year_dx
+lrtest(race.adj, race.adj.mod)
+
+##LR Test indicates that the year_cat variable significantly (p<0.05) improves model fit.
+```
+Interpretation: 
+- After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Black had a 1.32 (95% CI 1.26 - 1.37) times higher hazard of death from cervical cancer than those who were NH White.
+
+- After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.88 (95% CI 0.82 - 0.93) times hazard of death from cervical cancer than those who were NH White.
+
+- After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were Hispanic(all races) had a 0.95 (95% CI 0.91 - 0.99) times hazard of death from cervical cancer than those who were NH White.
+
+- After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH American Indian/Alaska Native did not have a significant difference (p>0.05) in hazard of death from cervical cancer than those who were NH White.
+
+
+
+##Test PH Assumption
+```{r}
+#Evaluate the PH assumption using log-log plots for race_eth
+cerv.ph <- survfit(Surv(surv_months, vstat) ~ race_eth, cerv_3) # get survival probabilities
+summary(cerv.ph)
+
+plot(cerv.ph , col=c("magenta", "lightblue", "lightgreen", "purple", "orange"), main= "race_eth log log plot", fun="cloglog", xlab="Time", ylab="log(-log(S(t))")
+
+
+#Evaluate the PH assumption on the adjusted model using Schoenfeld goodness-of-fit test 
+test.ph <- cox.zph(race.adj.mod, terms=TRUE) 
+test.ph
+
+#Significant p value (<0.05) indicated violation of the PH assumption for all variables except year_cat
+```
+
+##Try RMST analysis instead (due to PH assumption violation) 
+```{r}
+##(this is demo/lab code, adjust as needed)
+
+RMST does not like 0 as a survival time. For those with 0 months survival time, change to 0.5 months
+breast2 <- breast2 %>%
+  mutate(survmo2 = case_when(survmo == 0 ~ 0.5,
+                              survmo > 0 ~ survmo))
+summary(breast2$survmo2)
+
+
+```
+
