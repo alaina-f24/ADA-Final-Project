@@ -14,8 +14,9 @@ to analyze it. This is a final project for the Advanced Data Analysis course, pr
 - Performs basic data cleaning (e.g., renaming columns, filtering)
 - Creates summary statistics (e.g., age, gender, responses)
 - Generates Kaplan-Meier plots to visualize the data
-- Runs unadjusted and adjusted survival analyses
-- Tests assumptions for survival regression model
+- Runs unadjusted and adjusted Cox PH regression survival analyses
+- Tests assumptions for Cox PH regression model
+- Runs unadjusted and adjusted RMST analyses
 
 ## How to Run the Code
 1. Download or clone this repository to your computer
