@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-pacman::p_load(tidyverse, readr, table1, DiagrammeR, rsvg, survival, ggfortify, survminer, ggplot2, lmtest, foreign, naniar, survRM2, haven, magrittr, mlr)
+pacman::p_load(tidyverse, readr, table1, DiagrammeR, car, rsvg, survival, ggfortify, survminer, ggplot2, lmtest, foreign, naniar, survRM2, haven, magrittr, mlr)
 
 
 ```
@@ -64,18 +64,18 @@ cerv <- cerv %>%
 summary(cerv)
 
 
-#selecting only women over the age of 18 years
-cerv <- cerv %>%
-  filter(age > 18)
-
-##number of cases = 119,408
-
-
 #selecting only women diagnosed between 2010-2019
 cerv <- cerv %>%
   filter(year_dx >= 2010, year_dx <= 2019)
 
-###number of cases = 54,415
+###number of cases = 54,957
+
+
+#selecting only women over the age of 18 years
+cerv <- cerv %>%
+  filter(age > 18)
+
+##number of cases = 54,415
 
 ```
 
@@ -113,12 +113,16 @@ cerv$race_eth <- factor(cerv$race_eth,
 
 ##set NA's for other variables
 cerv <- replace_with_na(cerv, replace = list(
-                               stage = c("Unknown/unstaged", "Blank(s)"),
+                               stage = c("Unknown/unstaged", "In situ", "Blank(s)"), #set "In situ" as NA because only 7 observations (0%) in entire dataset 
                                race_eth = c("Non-Hispanic Unknown Race"),
                                rural_urban = c("Unknown/missing/no match (Alaska or Hawaii - Entire State)", "Unknown/missing/no match/Not 1990-2022"),
                                cause_spec_death = c("N/A not seq 0-59"))) %>%
   droplevels()
 
+
+#relevel stage variable so Localized is reference
+cerv$stage <- factor(cerv$stage,
+                     levels = c("Localized", "Regional", "Distant"))
 
 #rename levels in rural_urban
 levels(cerv$rural_urban) <- c("Urban (over 1mil pop)", "Urban (250k - 1mil pop)", "Urban (under 250k pop)", "Rural (near urban)", "Rural")
@@ -128,8 +132,8 @@ levels(cerv$rural_urban) <- c("Urban (over 1mil pop)", "Urban (250k - 1mil pop)"
 cerv_1 <- cerv %>%
   drop_na()
 
-#number of cases = 44,434
-#check percentage of cases removed = 18.34%
+#number of cases = 44,428
+#check percentage of cases removed = 18.35%
 100 - nrow(cerv_1)/nrow(cerv) * 100
 
 
@@ -146,9 +150,45 @@ cerv_2 <- cerv %>%
 cerv_3 <- cerv %>%
   drop_na(race_eth, vstat, surv_months, age, year_dx, income_cat, rural_urban, stage)
 
-#number of cases = 49,904
-#check percentage of cases removed = 8.29%
+#number of cases = 49,897
+#check percentage of cases removed = 8.30%
 100 - nrow(cerv_3)/nrow(cerv) * 100
+
+```
+
+## Figure 1 - Sample size
+
+```{r}
+
+figure1 <- grViz(diagram = "digraph flowchart{ 
+      
+      node [fontname = Helvetica, shape = rectangle, fontsize = 15] 
+      
+      # Define the nodes: nodes indicate how many boxes you will have in your diagram. Since I have three sets of exclusions, I will have four nodes.
+      
+      node1 [label = '@@1'] # starting number
+      node2 [label = '@@2'] # number after exclusion 1
+      node3 [label = '@@3'] # number after exclusion 2
+      node4 [label = '@@4'] # number after exclusion 3
+      node5 [label = '@@5'] # number after exclusion 4
+      
+      # edge definitions with the node IDs are used to indicate how the rectangle boxes flow from each other. 
+      
+      node1 -> node2 -> node3 -> node4 ->node5
+}
+      # This set of code provides the text in each rectangle box.
+      [1]: 'Data received from SEER database, women diagnosed with cervical cancer in 2000-2021 \\n from 22 SEER Registries in the United States, n = 120,618'
+      [2]: 'Excluding 65,661 individuals outside of the timeframe of interest 2010-2019, n = 54,957'
+      [3]: 'Excluding 542 individuals under the age of 18, n = 54,415'
+      [4]: 'Excluding 703 individuals with missing data on Race/Ethnicity, Vital Status, and Survival Time, n = 53,712'
+      [5]: 'Excluding 4,511 individuals with missing data on Age at Diagnosis, \\n Year of Diagnosis, Income, Rural/Urban Status, and Stage, n = 49,897'
+      ")
+
+#export figure 1
+figure1 %>%
+  DiagrammeRsvg::export_svg() %>% 
+  charToRaw() %>% 
+  rsvg::rsvg_png("Figure 1.png") 
 
 ```
 
@@ -169,7 +209,7 @@ label(cerv_3$cause_spec_death) <- "Cause of Death"
 label(cerv_3$year_dx) <- "Year of Diagnosis"
 
 ##initial table
-table1( ~ surv_months + cause_spec_death + age + year_dx + rural_urban + income_cat| race_eth, overall = "Total", rowlabelhead = "Variable", cerv_3)
+table1( ~ surv_months + cause_spec_death + age + year_dx + stage + rural_urban + income_cat| race_eth, overall = "Total", rowlabelhead = "Variable", cerv_3)
 
 ```
 
@@ -186,10 +226,16 @@ summary(cerv.surv)
 class(cerv.surv)
 
 ##Create the Kaplan Meier Curve
-autoplot(cerv.surv) + labs(x="Months", y="Proportion Surviving", title="KM survival plots for Cervical Cancer by Race/Ethnicity") 
+km_plot <- autoplot(cerv.surv) + labs(x="Months", y="Proportion Surviving", title="KM survival plots for Cervical Cancer by Race/Ethnicity") 
 
-##Another version of Kaplan Meier Curve
-ggsurvplot(cerv.surv, data = cerv_3,  conf.int=TRUE, tables.theme = clean_theme())
+#export KM curve
+ggsave(
+  filename = "KM_plot.png",
+  plot = km_plot,
+  width = 8,       # width in inches
+  height = 6,      # height in inches
+  dpi = 300        # resolution in dots per inch
+)
 
 ```
 
@@ -204,7 +250,11 @@ summary(race)
 
 ### Interpretations
 
--   Those who were NH Black had a 1.41 (95% CI 1.35 - 1.48) times higher hazard of death from cervical cancer than those who were NH White. - Those who were NH Asian or Pacific Islander had a 0.91 (95% CI 0.85-0.97) times hazard of death from cervical cancer than those who were NH White. - Those who were Hispanic (all races) had a 0.89 (95% CI 0.86-0.93) times hazard of death from cervical cancer than those who were NH White.
+-   Those who were NH Black had a 1.41 (95% CI 1.35 - 1.48) times higher hazard of death from cervical cancer than those who were NH White.
+
+-   Those who were NH Asian or Pacific Islander had a 0.91 (95% CI 0.85-0.97) times hazard of death from cervical cancer than those who were NH White.
+
+-   Those who were Hispanic (all races) had a 0.89 (95% CI 0.86-0.93) times hazard of death from cervical cancer than those who were NH White.
 
 -   NH American Indian/Alaska Native has non-significant (p\>0.05) difference from NH White.
 
@@ -212,8 +262,8 @@ summary(race)
 
 ```{r}
 
-#adjusting for both age and year at diagnosis
-race.adj <- coxph(Surv(surv_months, vstat) ~ race_eth + age + year_dx + income_cat + rural_urban, cerv_3, ties = "efron")
+#adjusting for age, year at diagnosis, stage, income, rural/urban
+race.adj <- coxph(Surv(surv_months, vstat) ~ race_eth + age + year_dx + stage + income_cat + rural_urban, cerv_3, ties = "efron")
 summary(race.adj)
 
 
@@ -221,11 +271,11 @@ summary(race.adj)
 
 ### Interpretation
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Black had a 1.32 (95% CI 1.26 - 1.39) times higher hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, stage, income level, and residential location, those who were NH Black had a 1.20 (95% CI 1.14 - 1.25) times higher hazard of death from cervical cancer than those who were NH White.
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.89 (95% CI 0.84 - 0.95) times hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.88 (95% CI 0.83 - 0.94) times hazard of death from cervical cancer than those who were NH White.
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were Hispanic(all races) had a 0.96 (95% CI 0.92 - 0.99) times hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were Hispanic(all races) had a 0.91 (95% CI 0.88 - 0.95) times hazard of death from cervical cancer than those who were NH White.
 
 -   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH American Indian/Alaska Native did not have a significant difference (p\>0.05) in hazard of death from cervical cancer than those who were NH White.
 
@@ -239,25 +289,27 @@ lrtest(race, race.adj)
 
 #### Interpretation
 
--   The likelihood ratio test indicates that the model that includes age, year, income, rural_urban variables significantly improves fit compared to the model with just race_eth (p = 2.2 x e-16).
+-   The likelihood ratio test indicates that the model that includes age, year, income, rural_urban variables significantly improves fit compared to the model with just race_eth (p \< 2.2 x e-16).
 
-### Check for linearity of continuous variables
+### Check Assumptions (multicolinearity and linearity of continuous variables)
 
 ```{r}
+
+#check multicollinearity with VIF
+vif(race.adj)
+##VIF ~ 1, no multicollinearity
+
 
 #create interaction terms for continuous variables
 age_log_interaction <- cerv_3$age * log(cerv_3$age)
 
 year_dx_log_interaction <- cerv_3$year_dx * log(cerv_3$year_dx)
 
-
 #Box Tidwell test for linearity of age variable
 boxTidwell.age <- coxph(Surv(surv_months, vstat) ~ race_eth + age + age_log_interaction + year_dx + income_cat + rural_urban, cerv_3)
 
 summary(boxTidwell.age)
-##p-value for interaction term is <0.05, indicating the linearity assumption is NOT met for age 
-##**NEED TO ASK/FIGURE OUT WHAT TO DO FOR THIS?? IT WAS NOT SIG WHEN I DID 2009-2019 but changed to SIG when I altered time frame to 10 years (2010-2019).
-
+##p-value for interaction term is <0.05, indicating the linearity assumption is NOT met for age... Really close and want to avoid making categorical variable, check with histogram next
 
 #Box Tidwell test for linearity of year_dx variable
 boxTidwell.yeardx <- coxph(Surv(surv_months, vstat) ~ race_eth + age + year_dx + year_dx_log_interaction + income_cat + rural_urban, cerv_3)
@@ -276,6 +328,9 @@ ggplot(cerv_3, aes(x = age)) +
        x = "Age at Diagnosis", y = "Number of Cases") +
   theme_minimal()
 
+##this is a little skewed but mostly has normal distribution, going to keep as a continuous variable
+
+
 #visualize distribution of year_dx variable
 ggplot(cerv_2, aes(x = year_dx)) +
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
@@ -292,23 +347,20 @@ ggplot(cerv_2, aes(x = year_dx)) +
 
 cerv_3$year_cat <- factor(cerv_3$year_dx)
 
-race.adj.mod <- coxph(Surv(surv_months, vstat) ~ race_eth + age + year_cat + income_cat + rural_urban, cerv_3, ties = "efron")
+#run adjusted Cox PH with year_cat
+race.adj.mod <- coxph(Surv(surv_months, vstat) ~ race_eth + age + year_cat + stage + income_cat + rural_urban, cerv_3, ties = "efron")
 summary(race.adj.mod)
 
 
-#compare to other adjusted model with year_dx
-lrtest(race.adj, race.adj.mod)
-
-##LR Test indicates that the year_cat variable significantly (p<0.05) improves model fit.
 ```
 
 #### Interpretation
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Black had a 1.32 (95% CI 1.26 - 1.37) times higher hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Black had a 1.19 (95% CI 1.14 - 1.25) times higher hazard of death from cervical cancer than those who were NH White.
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.88 (95% CI 0.82 - 0.93) times hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.88 (95% CI 0.83 - 0.94) times hazard of death from cervical cancer than those who were NH White.
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were Hispanic(all races) had a 0.95 (95% CI 0.91 - 0.99) times hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were Hispanic(all races) had a 0.92 (95% CI 0.88 - 0.95) times hazard of death from cervical cancer than those who were NH White.
 
 -   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH American Indian/Alaska Native did not have a significant difference (p\>0.05) in hazard of death from cervical cancer than those who were NH White.
 
@@ -401,9 +453,17 @@ print(rmst.his)
 
 ### Interpretation
 
-**Restricted Mean Survival Time (RMST) by arm** - The mean survival time for patients who were NH White was 47.6 months, NH Black was 43.4 months, NH Asian or Pacific Islander was 49.2 months, NH American Indian/Alaska Native was 48.5 months, and Hispanic (All Races) was 49.0 months respectively when following the patients for 60 months (5 years).
+**Restricted Mean Survival Time (RMST) by arm**
 
-**Between-group contrast** - The differences in RMST between NH Black vs. NH White was -4.2 months, NH Asian vs. NH White was 1.6 momths, NH American Indian vs NH White was 0.9 months, and Hispanic vs. NH White was 1.4 months, respectively. - This indicates that the survival time after diagnosis for NH Black patients was 4.2 months shorter than NH White patients on average, when following the patients for 60 months. - Also indicates that the survival time after diagnosis for NH Asian or Pacific Islander, NH American Indian/Alaska Native, and Hispanic (All Races) patients were 1.6 months, 0.9 months, and 1.4 months longer than NH White patients respectively, when following the patients for 60 months.
+-   The mean survival time for patients who were NH White was 47.6 months, NH Black was 43.4 months, NH Asian or Pacific Islander was 49.2 months, NH American Indian/Alaska Native was 48.5 months, and Hispanic (All Races) was 49.0 months respectively when following the patients for 60 months (5 years).
+
+**Between-group contrast**
+
+-   The differences in RMST between NH Black vs. NH White was -4.2 months, NH Asian vs. NH White was 1.6 months, NH American Indian vs NH White was 0.9 months, and Hispanic vs. NH White was 1.4 months, respectively.
+
+    -   This indicates that the survival time after diagnosis for NH Black patients was 4.2 months shorter than NH White patients on average, when following the patients for 60 months.
+
+    -   Also indicates that the survival time after diagnosis for NH Asian or Pacific Islander, NH American Indian/Alaska Native, and Hispanic (All Races) patients were 1.6 months, 0.9 months, and 1.4 months longer than NH White patients respectively, when following the patients for 60 months.
 
 ## Adjusted RMST Analysis
 
@@ -423,6 +483,7 @@ levels(cerv_4$rural_urban) <- c("urban.big", "urban.med", "urban.small", "rural.
 cerv_4 <- createDummyFeatures(cerv_4, cols = "year_cat")
 cerv_4 <- createDummyFeatures(cerv_4, cols = "income_cat")
 cerv_4 <- createDummyFeatures(cerv_4, cols = "rural_urban")
+cerv_4 <- createDummyFeatures(cerv_4, cols = "stage")
 
 
 #ADJUSTED RMST NH White vs NH Black 
@@ -433,9 +494,9 @@ cerv_black <- cerv_4 %>%
 cerv_black$race_bin <- ifelse(cerv_black$race_eth == "Non-Hispanic White", 0, 1)
 
 ##run the adjusted RMST for NH white vs NH Black
-rmst.black.adj <- rmst2(cerv_black$surv_months2, cerv_black$vstat, cerv_black$race_bin, tau= 60, covariates = cerv_black %>% select(age, year_cat.2011, year_cat.2012, year_cat.2013, year_cat.2014, year_cat.2015, year_cat.2016, year_cat.2017, year_cat.2018, year_cat.2019, income_cat.1, income_cat.2, income_cat.3, rural_urban.urban.med, rural_urban.urban.small, rural_urban.rural.big, rural_urban.rural.small))
+rmst.black.adj <- rmst2(cerv_black$surv_months2, cerv_black$vstat, cerv_black$race_bin, tau= 60, covariates = cerv_black %>% select(age, year_cat.2011, year_cat.2012, year_cat.2013, year_cat.2014, year_cat.2015, year_cat.2016, year_cat.2017, year_cat.2018, year_cat.2019, income_cat.1, income_cat.2, income_cat.3, rural_urban.urban.med, rural_urban.urban.small, rural_urban.rural.big, rural_urban.rural.small, stage.Regional, stage.Distant))
 
-###using the year_dx.2010, highest income level (income_cat.1), urban largest population (rural_urban.urban.big) as reference levels
+###using the year_dx.2010, highest income level (income_cat.1), urban largest population (rural_urban.urban.big), least severe cancer stage (stage.Localized) as reference levels
 
 print(rmst.black.adj)
 
@@ -449,7 +510,7 @@ cerv_api <- cerv_4 %>%
 cerv_api$race_bin <- ifelse(cerv_api$race_eth == "Non-Hispanic White", 0, 1)
 
 ##run the adjusted RMST for NH White vs NH Asian
-rmst.api.adj <- rmst2(cerv_api$surv_months2, cerv_api$vstat, cerv_api$race_bin, tau= 60, covariates = cerv_api %>% select(age, year_cat.2011, year_cat.2012, year_cat.2013, year_cat.2014, year_cat.2015, year_cat.2016, year_cat.2017, year_cat.2018, year_cat.2019, income_cat.1, income_cat.2, income_cat.3, rural_urban.urban.med, rural_urban.urban.small, rural_urban.rural.big, rural_urban.rural.small))
+rmst.api.adj <- rmst2(cerv_api$surv_months2, cerv_api$vstat, cerv_api$race_bin, tau= 60, covariates = cerv_api %>% select(age, year_cat.2011, year_cat.2012, year_cat.2013, year_cat.2014, year_cat.2015, year_cat.2016, year_cat.2017, year_cat.2018, year_cat.2019, income_cat.1, income_cat.2, income_cat.3, rural_urban.urban.med, rural_urban.urban.small, rural_urban.rural.big, rural_urban.rural.small, stage.Regional, stage.Distant))
 
 ###using the year_dx.2010, highest income level (income_cat.1), urban largest population (rural_urban.urban.big) as reference levels
 
@@ -465,7 +526,7 @@ cerv_aian <- cerv_4 %>%
 cerv_aian$race_bin <- ifelse(cerv_aian$race_eth == "Non-Hispanic White", 0, 1)
 
 ##run the adjusted RMST for NH White vs NH AIAN
-rmst.aian.adj <- rmst2(cerv_aian$surv_months2, cerv_aian$vstat, cerv_aian$race_bin, tau= 60, covariates = cerv_aian %>% select(age, year_cat.2011, year_cat.2012, year_cat.2013, year_cat.2014, year_cat.2015, year_cat.2016, year_cat.2017, year_cat.2018, year_cat.2019, income_cat.1, income_cat.2, income_cat.3, rural_urban.urban.med, rural_urban.urban.small, rural_urban.rural.big, rural_urban.rural.small))
+rmst.aian.adj <- rmst2(cerv_aian$surv_months2, cerv_aian$vstat, cerv_aian$race_bin, tau= 60, covariates = cerv_aian %>% select(age, year_cat.2011, year_cat.2012, year_cat.2013, year_cat.2014, year_cat.2015, year_cat.2016, year_cat.2017, year_cat.2018, year_cat.2019, income_cat.1, income_cat.2, income_cat.3, rural_urban.urban.med, rural_urban.urban.small, rural_urban.rural.big, rural_urban.rural.small, stage.Regional, stage.Distant))
 
 ###using the year_dx.2010, highest income level (income_cat.1), urban largest population (rural_urban.urban.big) as reference levels
 
@@ -481,7 +542,7 @@ cerv_his <- cerv_4 %>%
 cerv_his$race_bin <- ifelse(cerv_his$race_eth == "Non-Hispanic White", 0, 1)
 
 ##run the adjusted RMST for NH White vs NH AIAN
-rmst.his.adj <- rmst2(cerv_his$surv_months2, cerv_his$vstat, cerv_his$race_bin, tau= 60, covariates = cerv_his %>% select(age, year_cat.2011, year_cat.2012, year_cat.2013, year_cat.2014, year_cat.2015, year_cat.2016, year_cat.2017, year_cat.2018, year_cat.2019, income_cat.1, income_cat.2, income_cat.3, rural_urban.urban.med, rural_urban.urban.small, rural_urban.rural.big, rural_urban.rural.small))
+rmst.his.adj <- rmst2(cerv_his$surv_months2, cerv_his$vstat, cerv_his$race_bin, tau= 60, covariates = cerv_his %>% select(age, year_cat.2011, year_cat.2012, year_cat.2013, year_cat.2014, year_cat.2015, year_cat.2016, year_cat.2017, year_cat.2018, year_cat.2019, income_cat.1, income_cat.2, income_cat.3, rural_urban.urban.med, rural_urban.urban.small, rural_urban.rural.big, rural_urban.rural.small, stage.Regional, stage.Distant))
 
 ###using the year_dx.2010, highest income level (income_cat.1), urban largest population (rural_urban.urban.big) as reference levels
 
@@ -491,4 +552,18 @@ print(rmst.his.adj)
 
 ### Interpretation
 
-**Between-group contrast** After adjustment for age at diagnosis, year of diagnosis, income, and rural/urbans status... - The differences in RMST between NH Black vs. NH White was -2.671 months, NH Asian vs. NH White was 1.700 months, NH American Indian vs NH White was -0.696 months, and Hispanic vs. NH White was 0.650 months, respectively. - This indicates that... - The survival time after diagnosis for NH Black patients was 2.671 months shorter than NH White patients on average, when following the patients for 60 months (p\<0.05). - The survival time after diagnosis for NH Asian or Pacific Islander patients was 1.700 months longer than NH White patients on average, when following the patients for 60 months (p\<0.05). - The survival time after diagnosis for NH American Indian/Alaska Native patients was 0.696 months shorter than NH White patients on average, but was not significant (p=0.527) when following the patients for 60 months. (non-significant likely due to small sample size) - The survival time after diagnosis for Hispanic (All Races) patients was 0.650 months longer than NH White patients on average, when following the patients for 60 months (p\<0.05).
+**Between-group contrast**
+
+After adjustment for age at diagnosis, year of diagnosis, income, and rural/urban status...
+
+-   The differences in RMST between NH Black vs. NH White was -1.636 months, NH Asian vs. NH White was 1.275 months, NH American Indian vs NH White was -0.514 months, and Hispanic vs. NH White was 0.833 months, respectively.
+
+This indicates that...
+
+-   The survival time after diagnosis for NH Black patients was 1.636 months shorter than NH White patients on average, when following the patients for 60 months (p\<0.05).
+
+-   The survival time after diagnosis for NH Asian or Pacific Islander patients was 1.2.75 months longer than NH White patients on average, when following the patients for 60 months (p\<0.05).
+
+-   The survival time after diagnosis for NH American Indian/Alaska Native patients was 0.514 months shorter than NH White patients on average, but was not significant (p=0.588) when following the patients for 60 months. (non-significant likely due to small sample size)
+
+-   The survival time after diagnosis for Hispanic (All Races) patients was 0.833 months longer than NH White patients on average, when following the patients for 60 months (p\<0.05).
