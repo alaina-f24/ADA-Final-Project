@@ -273,11 +273,11 @@ summary(race.adj)
 
 -   After adjusting for age at diagnosis, year of diagnosis, stage, income level, and residential location, those who were NH Black had a 1.20 (95% CI 1.14 - 1.25) times higher hazard of death from cervical cancer than those who were NH White.
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.88 (95% CI 0.83 - 0.94) times hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, stage, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.88 (95% CI 0.83 - 0.94) times hazard of death from cervical cancer than those who were NH White.
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were Hispanic(all races) had a 0.91 (95% CI 0.88 - 0.95) times hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, stage, income level, and residential location, those who were Hispanic(all races) had a 0.91 (95% CI 0.88 - 0.95) times hazard of death from cervical cancer than those who were NH White.
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH American Indian/Alaska Native did not have a significant difference (p\>0.05) in hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, stage, income level, and residential location, those who were NH American Indian/Alaska Native did not have a significant difference (p\>0.05) in hazard of death from cervical cancer than those who were NH White.
 
 ### Compare Cox PH models
 
@@ -322,7 +322,7 @@ summary(boxTidwell.yeardx)
 
 
 #visualize distribution of age variable
-ggplot(cerv_3, aes(x = age)) +
+age_plot <- ggplot(cerv_3, aes(x = age)) +
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
   labs(title = "Distribution of Age at Diagnosis",
        x = "Age at Diagnosis", y = "Number of Cases") +
@@ -332,11 +332,29 @@ ggplot(cerv_3, aes(x = age)) +
 
 
 #visualize distribution of year_dx variable
-ggplot(cerv_2, aes(x = year_dx)) +
+year_plot <- ggplot(cerv_3, aes(x = year_dx)) +
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
   labs(title = "Distribution of Year of Diagnosis",
        x = "Year of Diagnosis", y = "Number of Cases") +
   theme_minimal()
+
+
+#export histograms
+ggsave(
+  filename = "age_hist.png",
+  plot = age_plot,
+  width = 8,      
+  height = 6,      
+  dpi = 300        
+)
+
+ggsave(
+  filename = "year_hist.png",
+  plot = year_plot,
+  width = 8,      
+  height = 6,      
+  dpi = 300        
+)
 
 
 ```
@@ -356,7 +374,7 @@ summary(race.adj.mod)
 
 #### Interpretation
 
--   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Black had a 1.19 (95% CI 1.14 - 1.25) times higher hazard of death from cervical cancer than those who were NH White.
+-   After adjusting for age at diagnosis, year of diagnosis, stage, income level, and residential location, those who were NH Black had a 1.19 (95% CI 1.14 - 1.25) times higher hazard of death from cervical cancer than those who were NH White.
 
 -   After adjusting for age at diagnosis, year of diagnosis, income level, and residential location, those who were NH Asian or Pacific Islander had a 0.88 (95% CI 0.83 - 0.94) times hazard of death from cervical cancer than those who were NH White.
 
@@ -554,7 +572,7 @@ print(rmst.his.adj)
 
 **Between-group contrast**
 
-After adjustment for age at diagnosis, year of diagnosis, income, and rural/urban status...
+After adjustment for age at diagnosis, year of diagnosis, income, stage, and rural/urban status...
 
 -   The differences in RMST between NH Black vs. NH White was -1.636 months, NH Asian vs. NH White was 1.275 months, NH American Indian vs NH White was -0.514 months, and Hispanic vs. NH White was 0.833 months, respectively.
 
